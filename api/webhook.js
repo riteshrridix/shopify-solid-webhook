@@ -1,122 +1,328 @@
 export default async function handler(req, res) {
 
-    // Only allow POST
-    if (req.method !== 'POST') {
-        return res.status(405).json({
-            success: false,
-            error: 'Method not allowed'
-        });
+    // =========================================
+    // CORS
+    // =========================================
+
+    const allowedOrigin = 'https://silvrlining.in';
+
+    res.setHeader(
+        'Access-Control-Allow-Origin',
+        allowedOrigin
+    );
+
+    res.setHeader(
+        'Access-Control-Allow-Methods',
+        'POST, OPTIONS'
+    );
+
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type'
+    );
+
+    res.setHeader(
+        'Access-Control-Max-Age',
+        '86400'
+    );
+
+
+    // =========================================
+    // Handle CORS preflight
+    // =========================================
+
+    if (req.method === 'OPTIONS') {
+
+        return res.status(204).end();
+
     }
+
+
+    // =========================================
+    // Only allow POST
+    // =========================================
+
+    if (req.method !== 'POST') {
+
+        return res.status(405).json({
+
+            success: false,
+
+            error: 'Method not allowed'
+
+        });
+
+    }
+
 
     try {
 
-        // Vercel already parses JSON request body
+        // =====================================
+        // Get Shopify request body
+        // =====================================
+
         const requestBody = req.body;
 
-        console.log('=================================');
-        console.log('SHOPIFY REQUEST');
-        console.log('=================================');
-        console.log(JSON.stringify(requestBody, null, 2));
+
+        console.log(
+            '================================='
+        );
+
+        console.log(
+            'SHOPIFY REQUEST'
+        );
+
+        console.log(
+            '================================='
+        );
+
+        console.log(
+            JSON.stringify(
+                requestBody,
+                null,
+                2
+            )
+        );
 
 
-        // Check request body
-        if (!requestBody || typeof requestBody !== 'object') {
+        // =====================================
+        // Validate request body
+        // =====================================
+
+        if (
+            !requestBody ||
+            typeof requestBody !== 'object'
+        ) {
 
             return res.status(400).json({
+
                 success: false,
-                error: 'Invalid JSON request body'
+
+                error:
+                    'Invalid JSON request body'
+
             });
 
         }
 
 
-        // Abort Solid request after 15 seconds
-        const controller = new AbortController();
+        // =====================================
+        // Get fields
+        // =====================================
 
-        const timeout = setTimeout(() => {
-            controller.abort();
-        }, 15000);
+        const name =
+            requestBody.name || '';
+
+        const email =
+            requestBody.email || '';
+
+        const number =
+            requestBody.number || '';
 
 
-        let solidResponse;
+        // =====================================
+        // Validate fields
+        // =====================================
 
-        try {
+        if (!name || !email || !number) {
 
-            solidResponse = await fetch(
-                'https://app.solidwebhook.com/api/v1/webhooks/f0503c82-819a-4fcd-ab50-ebb58f44b8ad',
-                {
-                    method: 'POST',
+            return res.status(400).json({
 
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-SOLID-TOKEN': process.env.SOLID_TOKEN
-                    },
+                success: false,
 
-                    body: JSON.stringify(requestBody),
+                error:
+                    'Name, email and number are required'
 
-                    signal: controller.signal
-                }
-            );
-
-        } finally {
-
-            clearTimeout(timeout);
+            });
 
         }
 
 
-        // Read Solid response
-        const responseText = await solidResponse.text();
+        // =====================================
+        // Call Solid Webhook
+        // =====================================
+
+        let solidStatus = null;
+
+        let solidResponse = '';
+
+        let success = false;
+
+        let errorMessage = null;
 
 
-        console.log('=================================');
-        console.log('SOLID WEBHOOK RESPONSE');
-        console.log('=================================');
-        console.log('STATUS:', solidResponse.status);
-        console.log('BODY:', responseText);
+        try {
+
+            // Timeout after 15 seconds
+            const controller =
+                new AbortController();
 
 
-        // Return Solid response to Shopify
-        return res.status(solidResponse.ok ? 200 : 502).json({
+            const timeout =
+                setTimeout(
+                    () => controller.abort(),
+                    15000
+                );
 
-            success: solidResponse.ok,
 
-            solid_status: solidResponse.status,
+            try {
 
-            solid_response: responseText
+                const response =
+                    await fetch(
+                        'https://app.solidwebhook.com/api/v1/webhooks/f0503c82-819a-4fcd-ab50-ebb58f44b8ad',
+                        {
+
+                            method: 'POST',
+
+                            headers: {
+
+                                'Content-Type':
+                                    'application/json',
+
+                                'X-SOLID-TOKEN':
+                                    process.env.SOLID_TOKEN
+
+                            },
+
+                            body: JSON.stringify({
+
+                                name: name,
+
+                                email: email,
+
+                                number: number
+
+                            }),
+
+                            signal:
+                                controller.signal
+
+                        }
+                    );
+
+
+                solidStatus =
+                    response.status;
+
+
+                solidResponse =
+                    await response.text();
+
+
+                success =
+                    response.ok;
+
+
+                console.log(
+                    '================================='
+                );
+
+                console.log(
+                    'SOLID WEBHOOK RESPONSE'
+                );
+
+                console.log(
+                    '================================='
+                );
+
+                console.log(
+                    'STATUS:',
+                    solidStatus
+                );
+
+                console.log(
+                    'BODY:',
+                    solidResponse
+                );
+
+
+            } finally {
+
+                clearTimeout(timeout);
+
+            }
+
+
+        } catch (error) {
+
+            console.error(
+                'SOLID WEBHOOK ERROR:',
+                error
+            );
+
+
+            if (
+                error.name ===
+                'AbortError'
+            ) {
+
+                errorMessage =
+                    'Solid Webhook timed out after 15 seconds';
+
+            } else {
+
+                errorMessage =
+                    error.message;
+
+            }
+
+        }
+
+
+        // =====================================
+        // Return response to Shopify
+        // =====================================
+
+        if (success) {
+
+            return res.status(200).json({
+
+                success: true,
+
+                solid_status:
+                    solidStatus,
+
+                solid_response:
+                    solidResponse
+
+            });
+
+        }
+
+
+        return res.status(502).json({
+
+            success: false,
+
+            solid_status:
+                solidStatus,
+
+            solid_response:
+                solidResponse,
+
+            error:
+                errorMessage
 
         });
 
 
     } catch (error) {
 
-        console.error('=================================');
-        console.error('WEBHOOK ERROR');
-        console.error('=================================');
-        console.error(error);
-
-
-        // Solid Webhook timeout
-        if (error.name === 'AbortError') {
-
-            return res.status(504).json({
-
-                success: false,
-
-                error: 'Solid Webhook timed out after 15 seconds'
-
-            });
-
-        }
+        console.error(
+            'WEBHOOK ERROR:',
+            error
+        );
 
 
         return res.status(500).json({
 
             success: false,
 
-            error: error.message
+            error:
+                error.message
 
         });
 
     }
+
 }
