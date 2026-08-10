@@ -1,28 +1,33 @@
-export default async function handler(request) {
+export default async function handler(req, res) {
 
-    if (request.method !== 'POST') {
-        return new Response(
-            JSON.stringify({
-                success: false,
-                error: 'Method not allowed'
-            }),
-            {
-                status: 405,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
+    // Only allow POST
+    if (req.method !== 'POST') {
+        return res.status(405).json({
+            success: false,
+            error: 'Method not allowed'
+        });
     }
 
     try {
 
-        const requestBody = await request.json();
+        // Vercel already parses JSON request body
+        const requestBody = req.body;
 
         console.log('=================================');
         console.log('SHOPIFY REQUEST');
         console.log('=================================');
         console.log(JSON.stringify(requestBody, null, 2));
+
+
+        // Check request body
+        if (!requestBody || typeof requestBody !== 'object') {
+
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid JSON request body'
+            });
+
+        }
 
 
         // Abort Solid request after 15 seconds
@@ -60,30 +65,27 @@ export default async function handler(request) {
         }
 
 
+        // Read Solid response
         const responseText = await solidResponse.text();
 
 
         console.log('=================================');
-        console.log('SOLID RESPONSE');
+        console.log('SOLID WEBHOOK RESPONSE');
         console.log('=================================');
         console.log('STATUS:', solidResponse.status);
         console.log('BODY:', responseText);
 
 
-        return new Response(
-            JSON.stringify({
-                success: solidResponse.ok,
-                solid_status: solidResponse.status,
-                solid_response: responseText
-            }),
-            {
-                status: solidResponse.ok ? 200 : 502,
+        // Return Solid response to Shopify
+        return res.status(solidResponse.ok ? 200 : 502).json({
 
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
+            success: solidResponse.ok,
+
+            solid_status: solidResponse.status,
+
+            solid_response: responseText
+
+        });
 
 
     } catch (error) {
@@ -94,36 +96,27 @@ export default async function handler(request) {
         console.error(error);
 
 
+        // Solid Webhook timeout
         if (error.name === 'AbortError') {
 
-            return new Response(
-                JSON.stringify({
-                    success: false,
-                    error: 'Solid Webhook timed out after 15 seconds'
-                }),
-                {
-                    status: 504,
+            return res.status(504).json({
 
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+                success: false,
+
+                error: 'Solid Webhook timed out after 15 seconds'
+
+            });
+
         }
 
 
-        return new Response(
-            JSON.stringify({
-                success: false,
-                error: error.message
-            }),
-            {
-                status: 500,
+        return res.status(500).json({
 
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            }
-        );
+            success: false,
+
+            error: error.message
+
+        });
+
     }
 }
